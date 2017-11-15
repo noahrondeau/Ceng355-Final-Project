@@ -37,8 +37,14 @@
 #define DAC_MAX_VOLTS (2.92) // voltage output when DAC_MAX_VAL is written to DAC
 #define OPTO_DROP (0.9) // forward voltage on optocoupler (from datasheet)
 
-#ifndef TRACE_DEBUG
-#define TRACE_DEBUG 1
+//#define R1
+
+#ifndef MAIN_DEBUG
+#define MAIN_DEBUG 0
+#endif
+
+#ifndef EXTI_DEBUG
+#define EXTI_DEBUG 1
 #endif
 
 
@@ -53,6 +59,9 @@
  */
 typedef struct ADC_Typedef ADC_Typedef; // forward declaration
 typedef struct DAC_Typedef DAC_Typedef; // forward declaration
+typedef struct PWM_Typedef PWM_Typedef; // forward declaration
+
+// ------- ADC --------
 
 typedef struct ADC_Data_Typedef
 {
@@ -69,8 +78,13 @@ typedef struct ADC_Typedef{
 	void (*read)(volatile ADC_Typedef*);
 } ADC_Typedef;
 
+// prototype of ADC read method implementation
 void ADC_read_impl(volatile ADC_Typedef* self);
+// prototype of ADC constructor
 void ADC_struct_init(volatile ADC_Typedef* self);
+
+
+// ------- DAC --------
 
 typedef struct DAC_Data_Typedef
 {
@@ -87,8 +101,38 @@ typedef struct DAC_Typedef{
 	void (*write)(volatile DAC_Typedef*, ADC_Data_Typedef);
 } DAC_Typedef;
 
+// prototype of DAC write method implementation
 void DAC_write_impl(volatile DAC_Typedef* self, ADC_Data_Typedef d);
+// prototype of constructor
 void DAC_struct_init(volatile DAC_Typedef* self);
+
+// ------- PWM --------
+
+typedef struct PWM_Data_Typedef
+{
+	double period;
+	double frequency;
+} PWM_Data_Typedef;
+
+typedef enum Edge_Sequence_Typedef
+{
+	FIRST_EDGE,
+	SECOND_EDGE,
+} Edge_Sequence_Typedef;
+
+typedef struct PWM_Typedef
+{
+	// --------- Variable Members ----------
+	PWM_Data_Typedef data; // global signal frequency and period data
+	Edge_Sequence_Typedef edge; // count of which edge has been seen on the signal waveform
+
+	// --------- Function Members ----------
+	// none
+} PWM_Typedef;
+
+// prototype of constructor
+void PWM_struct_init(volatile PWM_Typedef* self);
+
 
 
 
@@ -109,10 +153,10 @@ void writeDAC(uint32_t dac_val);
 // ----------------------------------------------------------------------------
 //                                 GLOBALS
 // ----------------------------------------------------------------------------
-volatile uint32_t edge_num = 0;
 
 volatile ADC_Typedef pot;
 volatile DAC_Typedef opto;
+volatile PWM_Typedef pwm;
 
 // ----------------------------------------------------------------------------
 //                                   MAIN
@@ -122,16 +166,19 @@ int main(int argc, char* argv[])
 {
 	uint32_t loopCounter = 0;
 
-	trace_printf("This is Part 2 of Introductory Lab...\n");
-	trace_printf("System clock: %u Hz\n", SystemCoreClock);
+	trace_printf("Welcome to Noah Rondeau and Philip Itok's CENG 355 Final Project\n");
+	trace_printf("System clock: %u Hz\n\n", SystemCoreClock);
 
 	myGPIOA_Init(); // init port A
-	myTIM2_Init();	// init timer and interrupts
-	myEXTI_Init();	// init exti interrupts for PA1
 
-	//Initialize ADC and DAC
-	ADC_struct_init(&pot);
+	// Initialize potentiometer resource (ADC)
+	ADC_struct_init(&pot );
+	// Initialize optocoupler resource (DAC)
 	DAC_struct_init(&opto);
+	// Initialize PWM signal resource (EXTI, TIM2)
+	PWM_struct_init(&pwm );
+
+
 
 
 	while (1)
@@ -139,7 +186,7 @@ int main(int argc, char* argv[])
 		pot.read(&pot);
 		opto.write(&opto, pot.data);
 
-		if (TRACE_DEBUG)
+		if (MAIN_DEBUG)
 		{
 			trace_printf("=========== Loop %d ============\n\n", loopCounter);
 			trace_printf(">>\t");
@@ -310,6 +357,16 @@ void DAC_struct_init(volatile DAC_Typedef* self)
 	myDAC_Init();	// init DAC (automagically configured to PA4)
 }
 
+void PWM_struct_init(volatile PWM_Typedef* self)
+{
+	self->data.period = 0.0;
+	self->data.frequency = 0.0;
+	self->edge = FIRST_EDGE;
+
+	myTIM2_Init();	// init timer and interrupts
+	myEXTI_Init();	// init exti interrupts for PA1
+}
+
 
 
 
@@ -371,7 +428,7 @@ void TIM2_IRQHandler()
 
 void EXTI0_1_IRQHandler()
 {
-	// Your local variables...
+
 	double period = 0.0;
 	double freq = 0.0;
 	uint32_t count = 0;
@@ -380,13 +437,13 @@ void EXTI0_1_IRQHandler()
 	if ((EXTI->PR & EXTI_PR_PR1) != 0)
 	{
 		//
-		if (edge_num == 0)
+		if (pwm.edge == FIRST_EDGE)
 		{
 			TIM2->CNT = 0x0;
 			TIM2->CR1 |= TIM_CR1_CEN; /* Restart stopped timer */
-			edge_num++;
+			pwm.edge = SECOND_EDGE;
 		}
-		else if (edge_num >= 1)
+		else if (pwm.edge == SECOND_EDGE)
 		{
 			TIM2->CR1 &= ~(TIM_CR1_CEN);
 			//Stop timer
@@ -396,19 +453,22 @@ void EXTI0_1_IRQHandler()
 			period = ((double)count) / ((double)SystemCoreClock);
 			freq = ((double)1.0) / period;
 
-			trace_printf("====== Signal Parameters: =====\n");
-			trace_printf("\tPeriod:\t\t%f s\n", period);
-			trace_printf(" seconds\n\tFrequency:\t\t%f Hz\n", freq);
-			trace_printf("\n==========================\n\n");
+			pwm.data.frequency = freq;
+			pwm.data.period = period;
 
 			//Reset edges to 0
-			edge_num = 0;
+			pwm.edge = FIRST_EDGE;
+
+			if (EXTI_DEBUG)
+			{
+				trace_printf("=========== Signal ============\n\n");
+				trace_printf(">>\t");
+				trace_printf("Signal period:\t\t%f s\n", period);
+				trace_printf(">>\t");
+				trace_printf("Signal frequency:\t%f Ohms\n", freq);
+				trace_printf("\n");
+			}
 		}
-		//	  NOTE: Function trace_printf does not work
-		//	  with floating-point numbers: you must use
-		//	  "unsigned int" type to print your signal
-		//	  period and frequency.
-		//
 		EXTI->PR |= ((uint32_t)0x0002);
 	}
 }
