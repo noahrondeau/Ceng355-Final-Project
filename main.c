@@ -5,6 +5,7 @@
 // See "system/src/cmsis/vectors_stm32f0xx.c" for handler declarations.
 // ----------------------------------------------------------------------------
 
+
 // ----------------------------------------------------------------------------
 //                                 INCLUDES
 // ----------------------------------------------------------------------------
@@ -33,8 +34,25 @@
 #define myTIM2_PERIOD ((uint32_t)0xFFFFFFFF)
 
 #define DAC_MAX_VAL (4095)
-#define DAC_MAX_VOLTS (2.92)
-#define OPTO_DROP (1.0)
+#define DAC_MAX_VOLTS (2.92) // voltage output when DAC_MAX_VAL is written to DAC
+#define OPTO_DROP (0.9) // min forward voltage on optocoupler (from datasheet)
+
+// ----------------------------------------------------------------------------
+//                                TYPEDEFS
+// ----------------------------------------------------------------------------
+
+typedef struct
+{
+	uint32_t lastVal;
+	uint32_t lastOhm;
+
+} ADC;
+
+typedef struct
+{
+
+} DAC;
+
 
 // ----------------------------------------------------------------------------
 //                                PROTOTYPES
@@ -47,6 +65,7 @@ void myADC_Init(void);
 void myDAC_Init(void);
 uint32_t readPot(void);
 uint32_t toOhms(uint32_t adc_val);
+uint32_t toDacVal(uint32_t adc_val);
 void writeDAC(uint32_t dac_val);
 
 // ----------------------------------------------------------------------------
@@ -79,7 +98,11 @@ int main(int argc, char* argv[])
 		trace_printf("Potentiometer ADC value: %d\n", potVal);
 		trace_printf("Potentiometer Resistance value: %d Ohms\n", potOhm);
 
-		writeDAC(potVal);
+		uint32_t dacVal = toDacVal(potVal);
+
+		trace_printf("Writing to DAC: %d\n", dacVal);
+
+		writeDAC(dacVal);
 	}
 
 	return 0;
@@ -221,16 +244,18 @@ uint32_t toOhms(uint32_t adc_val)
 	return (uint32_t)((((float)adc_val)/4096.0) * 5000.0);
 }
 
+uint32_t toDacVal(uint32_t adc_val)
+{
+	float output_ratio = ((float)adc_val) / ((float)DAC_MAX_VAL);
+	float volt_range = DAC_MAX_VOLTS - OPTO_DROP;
+	float dac_volts_out = ( (output_ratio * volt_range ) + OPTO_DROP );
+	uint32_t ret = (uint32_t)((dac_volts_out / DAC_MAX_VOLTS)*((float)DAC_MAX_VAL));
+	return ret;
+}
+
 void writeDAC(uint32_t dac_val)
 {
-	float output_ratio = ((float)dac_val) / ((float)DAC_MAX_VAL);
-	float volt_range = (float)DAC_MAX_VOLTS - OPTO_DROP;
-	float dac_volts_out = ( (output_ratio * volt_range ) + OPTO_DROP );
-	uint32_t dac_val_out = (uint32_t)((dac_volts_out / DAC_MAX_VOLTS)*((float)DAC_MAX_VAL));
-
-	trace_printf("Writing to DAC: %d\n", dac_val_out);
-	trace_printf("Equivalent of volts: %f\n\n\n", dac_volts_out);
-	DAC->DHR12R1 = dac_val_out;
+	DAC->DHR12R1 = dac_val;
 }
 
 // ----------------------------------------------------------------------------
@@ -263,6 +288,7 @@ void EXTI0_1_IRQHandler()
 	/* Check if EXTI1 interrupt pending flag is indeed set */
 	if ((EXTI->PR & EXTI_PR_PR1) != 0)
 	{
+		//
 		if (edge_num == 0)
 		{
 			TIM2->CNT = 0x0;
@@ -287,10 +313,11 @@ void EXTI0_1_IRQHandler()
 			//Reset edges to 0
 			edge_num = 0;
 		}
-		// NOTE: Function trace_printf does not work
-		// with floating-point numbers: you must use
-		// "unsigned int" type to print your signal
-		// period and frequency.
+		//	  NOTE: Function trace_printf does not work
+		//	  with floating-point numbers: you must use
+		//	  "unsigned int" type to print your signal
+		//	  period and frequency.
+		//
 		EXTI->PR |= ((uint32_t)0x0002);
 	}
 }
