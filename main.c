@@ -35,23 +35,61 @@
 
 #define DAC_MAX_VAL (4095)
 #define DAC_MAX_VOLTS (2.92) // voltage output when DAC_MAX_VAL is written to DAC
-#define OPTO_DROP (0.9) // min forward voltage on optocoupler (from datasheet)
+#define OPTO_DROP (0.9) // forward voltage on optocoupler (from datasheet)
+
+#ifndef TRACE_DEBUG
+#define TRACE_DEBUG 1
+#endif
+
 
 // ----------------------------------------------------------------------------
 //                                TYPEDEFS
 // ----------------------------------------------------------------------------
 
-typedef struct
+/*
+ * These object-oriented structs are intended to be used as singletons to wrap
+ * ADC, DAC, and SPI functionality. This will make the code cleaner
+ * This pattern is used in lots of system implementations, for example the linuz kernel
+ */
+typedef struct ADC_Typedef ADC_Typedef; // forward declaration
+typedef struct DAC_Typedef DAC_Typedef; // forward declaration
+
+typedef struct ADC_Data_Typedef
 {
-	uint32_t lastVal;
-	uint32_t lastOhm;
+	uint32_t reading;
+	uint32_t resistance;
+} ADC_Data_Typedef;
 
-} ADC;
+typedef struct ADC_Typedef{
 
-typedef struct
+	// --------- Variable Members ----------
+	ADC_Data_Typedef data;
+
+	// --------- Function Members ----------
+	void (*read)(volatile ADC_Typedef*);
+} ADC_Typedef;
+
+void ADC_read_impl(volatile ADC_Typedef* self);
+void ADC_struct_init(volatile ADC_Typedef* self);
+
+typedef struct DAC_Data_Typedef
 {
+	uint32_t value;
+	float voltage;
+} DAC_Data_Typedef;
 
-} DAC;
+typedef struct DAC_Typedef{
+
+	// --------- Variable Members ----------
+	DAC_Data_Typedef data;
+
+	// --------- Function Members ----------
+	void (*write)(volatile DAC_Typedef*, ADC_Data_Typedef);
+} DAC_Typedef;
+
+void DAC_write_impl(volatile DAC_Typedef* self, ADC_Data_Typedef d);
+void DAC_struct_init(volatile DAC_Typedef* self);
+
 
 
 // ----------------------------------------------------------------------------
@@ -63,9 +101,9 @@ void myTIM2_Init(void);
 void myEXTI_Init(void);
 void myADC_Init(void);
 void myDAC_Init(void);
-uint32_t readPot(void);
+uint32_t readADC(void);
 uint32_t toOhms(uint32_t adc_val);
-uint32_t toDacVal(uint32_t adc_val);
+DAC_Data_Typedef toDacVal(uint32_t adc_val);
 void writeDAC(uint32_t dac_val);
 
 // ----------------------------------------------------------------------------
@@ -73,14 +111,16 @@ void writeDAC(uint32_t dac_val);
 // ----------------------------------------------------------------------------
 volatile uint32_t edge_num = 0;
 
+volatile ADC_Typedef pot;
+volatile DAC_Typedef opto;
+
 // ----------------------------------------------------------------------------
 //                                   MAIN
 // ----------------------------------------------------------------------------
 
 int main(int argc, char* argv[])
 {
-	uint32_t potVal = 0;
-	uint32_t potOhm = 0;
+	uint32_t loopCounter = 0;
 
 	trace_printf("This is Part 2 of Introductory Lab...\n");
 	trace_printf("System clock: %u Hz\n", SystemCoreClock);
@@ -88,21 +128,33 @@ int main(int argc, char* argv[])
 	myGPIOA_Init(); // init port A
 	myTIM2_Init();	// init timer and interrupts
 	myEXTI_Init();	// init exti interrupts for PA1
-	myADC_Init();	// init ADC with PA0 as analog input
-	myDAC_Init();	// init DAC (automagically configured to PA4)
+
+	//Initialize ADC and DAC
+	ADC_struct_init(&pot);
+	DAC_struct_init(&opto);
+
 
 	while (1)
 	{
-		potVal = readPot();
-		potOhm = toOhms(potVal);
-		trace_printf("Potentiometer ADC value: %d\n", potVal);
-		trace_printf("Potentiometer Resistance value: %d Ohms\n", potOhm);
+		pot.read(&pot);
+		opto.write(&opto, pot.data);
 
-		uint32_t dacVal = toDacVal(potVal);
+		if (TRACE_DEBUG)
+		{
+			trace_printf("=========== Loop %d ============\n\n", loopCounter);
+			trace_printf(">>\t");
+			trace_printf("Potentiometer reading:\t%d\n", pot.data.reading);
+			trace_printf(">>\t");
+			trace_printf("Potentiometer resistance:\t%d Ohms\n", pot.data.resistance);
+			trace_printf("\n");
+			trace_printf(">>\t");
+			trace_printf("Optocoupler output:\t%d\n", opto.data.value);
+			trace_printf(">>\t");
+			trace_printf("Optocoupler voltage:\t%f Ohms\n", opto.data.voltage);
+			trace_printf("\n");
+		}
 
-		trace_printf("Writing to DAC: %d\n", dacVal);
-
-		writeDAC(dacVal);
+		loopCounter++;
 	}
 
 	return 0;
@@ -225,10 +277,47 @@ void myDAC_Init(void)
 }
 
 // ----------------------------------------------------------------------------
+//                               OBJECT METHOD IMPLEMENTATIONS
+// ----------------------------------------------------------------------------
+
+void ADC_read_impl(volatile ADC_Typedef* self)
+{
+	self->data.reading = readADC();
+	self->data.resistance = toOhms(self->data.reading);
+}
+
+void ADC_struct_init(volatile ADC_Typedef* self)
+{
+	self->data.reading = 0;
+	self->data.resistance = 0;
+	self->read = &ADC_read_impl;
+
+	myADC_Init();	// init ADC with PA0 as analog input
+}
+
+void DAC_write_impl(volatile DAC_Typedef* self, ADC_Data_Typedef d)
+{
+	self->data = toDacVal(d.reading);
+	writeDAC(self->data.value);
+}
+
+void DAC_struct_init(volatile DAC_Typedef* self)
+{
+	self->data.value = 0;
+	self->data.voltage = 0.0;
+	self->write = &DAC_write_impl;
+
+	myDAC_Init();	// init DAC (automagically configured to PA4)
+}
+
+
+
+
+// ----------------------------------------------------------------------------
 //                               UTILITY FUNCTIONS
 // ----------------------------------------------------------------------------
 
-uint32_t readPot(void)
+uint32_t readADC(void)
 {
 	// start conversion
 	ADC1->CR |= ADC_CR_ADSTART;
@@ -244,12 +333,14 @@ uint32_t toOhms(uint32_t adc_val)
 	return (uint32_t)((((float)adc_val)/4096.0) * 5000.0);
 }
 
-uint32_t toDacVal(uint32_t adc_val)
+DAC_Data_Typedef toDacVal(uint32_t adc_val)
 {
+	DAC_Data_Typedef ret;
 	float output_ratio = ((float)adc_val) / ((float)DAC_MAX_VAL);
 	float volt_range = DAC_MAX_VOLTS - OPTO_DROP;
 	float dac_volts_out = ( (output_ratio * volt_range ) + OPTO_DROP );
-	uint32_t ret = (uint32_t)((dac_volts_out / DAC_MAX_VOLTS)*((float)DAC_MAX_VAL));
+	ret.value = (uint32_t)((dac_volts_out / DAC_MAX_VOLTS)*((float)DAC_MAX_VAL));
+	ret.voltage = dac_volts_out;
 	return ret;
 }
 
@@ -326,4 +417,3 @@ void EXTI0_1_IRQHandler()
 #pragma GCC diagnostic pop
 
 // ----------------------------------------------------------------------------
-
