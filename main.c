@@ -263,7 +263,6 @@ void EXTI0_1_IRQHandler()
 	/* Check if EXTI1 interrupt pending flag is indeed set */
 	if ((EXTI->PR & EXTI_PR_PR1) != 0)
 	{
-		//
 		if (edge_num == 0)
 		{
 			TIM2->CNT = 0x0;
@@ -288,11 +287,10 @@ void EXTI0_1_IRQHandler()
 			//Reset edges to 0
 			edge_num = 0;
 		}
-		//	  NOTE: Function trace_printf does not work
-		//	  with floating-point numbers: you must use
-		//	  "unsigned int" type to print your signal
-		//	  period and frequency.
-		//
+		// NOTE: Function trace_printf does not work
+		// with floating-point numbers: you must use
+		// "unsigned int" type to print your signal
+		// period and frequency.
 		EXTI->PR |= ((uint32_t)0x0002);
 	}
 }
