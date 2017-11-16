@@ -44,7 +44,7 @@
 #endif
 
 #ifndef EXTI_DEBUG
-#define EXTI_DEBUG 1
+#define EXTI_DEBUG 0
 #endif
 
 
@@ -60,6 +60,9 @@
 typedef struct ADC_Typedef ADC_Typedef; // forward declaration
 typedef struct DAC_Typedef DAC_Typedef; // forward declaration
 typedef struct PWM_Typedef PWM_Typedef; // forward declaration
+
+
+
 
 // ------- ADC --------
 
@@ -84,6 +87,9 @@ void ADC_read_impl(volatile ADC_Typedef* self);
 void ADC_struct_init(volatile ADC_Typedef* self);
 
 
+
+
+
 // ------- DAC --------
 
 typedef struct DAC_Data_Typedef
@@ -105,6 +111,9 @@ typedef struct DAC_Typedef{
 void DAC_write_impl(volatile DAC_Typedef* self, ADC_Data_Typedef d);
 // prototype of constructor
 void DAC_struct_init(volatile DAC_Typedef* self);
+
+
+
 
 // ------- PWM --------
 
@@ -134,6 +143,16 @@ typedef struct PWM_Typedef
 void PWM_struct_init(volatile PWM_Typedef* self);
 
 
+
+
+// ------- SPI --------
+
+typedef struct SPI_Typedef
+{
+	// --------- Variable Members ----------
+
+	// --------- Function Members ----------
+} SPI_Typedef;
 
 
 // ----------------------------------------------------------------------------
@@ -428,7 +447,6 @@ void TIM2_IRQHandler()
 
 void EXTI0_1_IRQHandler()
 {
-
 	double period = 0.0;
 	double freq = 0.0;
 	uint32_t count = 0;
@@ -436,7 +454,6 @@ void EXTI0_1_IRQHandler()
 	/* Check if EXTI1 interrupt pending flag is indeed set */
 	if ((EXTI->PR & EXTI_PR_PR1) != 0)
 	{
-		//
 		if (pwm.edge == FIRST_EDGE)
 		{
 			TIM2->CNT = 0x0;
