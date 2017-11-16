@@ -29,23 +29,37 @@
 // ----------------------------------------------------------------------------
 
 /* Clock prescaler for TIM2 timer: no prescaling */
-#define myTIM2_PRESCALER ((uint16_t)0x0000)
+#define TIM2_PRESCALER ((uint16_t)0x0000)
 /* Maximum possible setting for overflow */
-#define myTIM2_PERIOD ((uint32_t)0xFFFFFFFF)
+#define TIM2_PERIOD ((uint32_t)0xFFFFFFFF)
+
+// TIM3 controls LCD refresh
+// want to refresh 5 times per second
+// want to tick every millisecond
+// core clock: 48000000, so need to divide by 48000 to get 1000 ticks per second
+#define TIM3_PRESCALER ((uint16_t)(48000))
+// want to update LCD every 200 ms
+#define TIM3_PERIOD ((uint16_t)(200))
+
+// TIM16 is used for setting delays
+// we want to count milliseconds to same as for TIM3
+#define TIM16_PRESCALER ((uint16_t)(48000))
+// and just need a default value for the period
+#define TIM16_PERIOD ((uint16_t)(200))
 
 #define DAC_MAX_VAL (4095)
 #define DAC_MAX_VOLTS (2.92) // voltage output when DAC_MAX_VAL is written to DAC
 #define OPTO_DROP (0.9) // forward voltage on optocoupler (from datasheet)
 
+// define PB4 as LCK for LCD
+#define LCK_PIN ((uint16_t)0x0010)
+
 //#define R1
 
-#ifndef MAIN_DEBUG
 #define MAIN_DEBUG 0
-#endif
-
-#ifndef EXTI_DEBUG
 #define EXTI_DEBUG 0
-#endif
+#define TIM3_DEBUG 0
+#define TIM16_DEBUG 1
 
 
 // ----------------------------------------------------------------------------
@@ -145,14 +159,14 @@ void PWM_struct_init(volatile PWM_Typedef* self);
 
 
 
-// ------- SPI --------
+// ------- LCD --------
 
-typedef struct SPI_Typedef
+typedef struct LCD_Typedef
 {
 	// --------- Variable Members ----------
 
 	// --------- Function Members ----------
-} SPI_Typedef;
+} LCD_Typedef;
 
 
 // ----------------------------------------------------------------------------
@@ -160,14 +174,22 @@ typedef struct SPI_Typedef
 // ----------------------------------------------------------------------------
 
 void myGPIOA_Init(void);
+void myGPIOB_Init(void);
+
 void myTIM2_Init(void);
+void myTIM3_Init(void);
+void myTIM16_Init(void);
 void myEXTI_Init(void);
+
 void myADC_Init(void);
 void myDAC_Init(void);
+void mySPI_Init(void);
+
 uint32_t readADC(void);
 uint32_t toOhms(uint32_t adc_val);
 DAC_Data_Typedef toDacVal(uint32_t adc_val);
 void writeDAC(uint32_t dac_val);
+void delayMs(uint16_t ms);
 
 // ----------------------------------------------------------------------------
 //                                 GLOBALS
@@ -183,12 +205,12 @@ volatile PWM_Typedef pwm;
 
 int main(int argc, char* argv[])
 {
-	uint32_t loopCounter = 0;
 
 	trace_printf("Welcome to Noah Rondeau and Philip Itok's CENG 355 Final Project\n");
 	trace_printf("System clock: %u Hz\n\n", SystemCoreClock);
 
 	myGPIOA_Init(); // init port A
+	myGPIOB_Init(); // init port B
 
 	// Initialize potentiometer resource (ADC)
 	ADC_struct_init(&pot );
@@ -197,17 +219,28 @@ int main(int argc, char* argv[])
 	// Initialize PWM signal resource (EXTI, TIM2)
 	PWM_struct_init(&pwm );
 
-
+	mySPI_Init();
+	myTIM3_Init();
+	myTIM16_Init();
 
 
 	while (1)
 	{
+		/* --------- Test section --------- */
+		///*
+		trace_printf("Starting delay for 3 seconds\n");
+		delayMs(3000);
+		trace_printf("Finished delay!\n");
+		//*/
+		/* -------------------------------- */
+
+		/*
 		pot.read(&pot);
 		opto.write(&opto, pot.data);
 
 		if (MAIN_DEBUG)
 		{
-			trace_printf("=========== Loop %d ============\n\n", loopCounter);
+			trace_printf("=========== NEW READING ============\n\n");
 			trace_printf(">>\t");
 			trace_printf("Potentiometer reading:\t%d\n", pot.data.reading);
 			trace_printf(">>\t");
@@ -218,9 +251,8 @@ int main(int argc, char* argv[])
 			trace_printf(">>\t");
 			trace_printf("Optocoupler voltage:\t%f Ohms\n", opto.data.voltage);
 			trace_printf("\n");
-		}
+		}*/
 
-		loopCounter++;
 	}
 
 	return 0;
@@ -242,22 +274,59 @@ void myGPIOA_Init()
 	GPIOA->PUPDR &= ~(GPIO_PUPDR_PUPDR1);
 
 	// Configure PA0 as analog input
-	GPIOA->MODER &= ~(GPIO_MODER_MODER0);
+	GPIOA->MODER |= GPIO_MODER_MODER0;
 	//no pull-up or down
 	GPIOA->PUPDR &= ~(GPIO_PUPDR_PUPDR1);
 
 	// Configure PA4 as analog output
-	GPIOA->MODER &= ~(GPIO_MODER_MODER4);
+	GPIOA->MODER |= (GPIO_MODER_MODER4);
 	GPIOA->MODER &= ~(GPIO_PUPDR_PUPDR4);
+}
+
+void myGPIOB_Init(void)
+{
+	// Enable clock for GPIOB peripheral
+	RCC->AHBENR |= RCC_AHBENR_GPIOBEN;
+
+	// Configure PB4 as output LCK for SPI
+
+	// Configure as output
+	GPIOB->MODER |= (GPIO_MODER_MODER4_0);
+	// COnfigure push-pull mode
+	GPIOB->OTYPER &= ~(GPIO_OTYPER_OT_4);
+	// Configure high-speed mode
+	GPIOB->OSPEEDR |= (GPIO_OSPEEDER_OSPEEDR4);
+	// Configure no pull-up/pull-down
+	GPIOB->PUPDR &= ~(GPIO_PUPDR_PUPDR4);
+
+	// Configure PB3 as alternate function 0 (SPI1_SCK)
+
+	// Configure AF0
+	GPIOB->MODER |= (GPIO_MODER_MODER3_0);
+	// Configure push-pull mode
+	GPIOB->OTYPER &= ~(GPIO_OTYPER_OT_3);
+	// Configure high speed mode
+	GPIOB->OSPEEDR |= (GPIO_OSPEEDER_OSPEEDR3);
+	// Configure no pull-up/pull-down
+	GPIOB->PUPDR &= ~(GPIO_PUPDR_PUPDR3);
+
+	// Configure PB5 as alternate function 0 (SPI1_MOSI)
+
+	// Configure AF0
+	GPIOB->MODER |= (GPIO_MODER_MODER5_0);
+	// Configure push-pull mode
+	GPIOB->OTYPER &= ~(GPIO_OTYPER_OT_5);
+	// Configure high speed mode
+	GPIOB->OSPEEDR |= (GPIO_OSPEEDER_OSPEEDR5);
+	// Configure no pull-up/pull-down
+	GPIOB->PUPDR &= ~(GPIO_PUPDR_PUPDR5);
 }
 
 
 void myTIM2_Init()
 {
-	// Note that the max possible value for period counting is 1099511627775 ticks
-	// Clock is 48 000 000 Hz
-	// So the longest detectable period is max_period_ticks / clock = 22906.5 seconds
-	// So the smallest possible detectable frequency is 0.00004366
+	// TIM2 is used for pulse length counting
+
 	/* Enable clock for TIM2 peripheral */
 	RCC->APB1ENR |= RCC_APB1ENR_TIM2EN;
 
@@ -266,14 +335,14 @@ void myTIM2_Init()
 	TIM2->CR1 = ((uint16_t)0x008C);
 
 	/* Set clock prescaler value */
-	TIM2->PSC = myTIM2_PRESCALER;
+	TIM2->PSC = TIM2_PRESCALER;
 	/* Set auto-reloaded delay */
-	TIM2->ARR = myTIM2_PERIOD;
+	TIM2->ARR = TIM2_PERIOD;
 
 	/* Update timer registers */
 	TIM2->EGR = ((uint16_t)0x0001);
 
-	/* Assign TIM2 interrupt priority = 0 in NVIC */
+	/* Assign TIM3 interrupt priority = 0 in NVIC */
 	NVIC_SetPriority(TIM2_IRQn, 0);
 
 	/* Enable TIM2 interrupts in NVIC */
@@ -281,6 +350,61 @@ void myTIM2_Init()
 
 	/* Enable update interrupt generation */
 	TIM2->DIER |= TIM_DIER_UIE;
+}
+
+
+void myTIM3_Init(void)
+{
+	// TIM3 is used for regularly refreshing the LCD
+
+	// Enable clock
+	RCC->APB1ENR |= RCC_APB1ENR_TIM3EN;
+
+	/* Configure TIM3: buffer auto-reload, count up, stop on overflow,
+	 * enable update events, interrupt on overflow only */
+	TIM3->CR1 = ((uint16_t)0x008C);
+
+	/* Set clock prescaler value */
+	TIM3->PSC = TIM3_PRESCALER;
+	/* Set auto-reloaded delay */
+	TIM3->ARR = TIM3_PERIOD;
+
+	/* Update timer registers */
+	TIM3->EGR = ((uint16_t)0x0001);
+
+	/* Assign TIM3 interrupt priority = 1 in NVIC */
+	// This is because we don't want to interrupt a pulse length count
+	NVIC_SetPriority(TIM3_IRQn, 1);
+
+	/* Enable TIM3 interrupts in NVIC */
+	NVIC_EnableIRQ(TIM3_IRQn);
+
+	/* Enable update interrupt generation */
+	TIM3->DIER |= TIM_DIER_UIE;
+
+	//Start counting
+	TIM3->CR1 |= TIM_CR1_CEN;
+}
+
+void myTIM16_Init(void)
+{
+	// enable the clock to the timer
+	RCC->APB2ENR |= RCC_APB2ENR_TIM16EN;
+
+	/* Configure TIM16: buffer auto-reload, count up, stop on overflow,
+	 * enable update events, interrupt on overflow only */
+	TIM16->CR1 = ((uint16_t)0x008C);
+
+	/* Set clock prescaler value */
+	TIM16->PSC = TIM16_PRESCALER;
+	/* Set auto-reloaded delay DEFAULT*/
+	TIM16->ARR = TIM16_PERIOD;
+
+	/* Update timer registers */
+	TIM16->EGR = ((uint16_t)0x0001);
+
+	// no interrupt generation, because we only actually care about the flag
+	// we wouldn't actually do anything in the handler anyway.
 }
 
 
@@ -340,6 +464,33 @@ void myDAC_Init(void)
 
 	// enable dac
 	DAC->CR |= DAC_CR_EN1;
+}
+
+void mySPI_Init(void)
+{
+	// enable clock to SPI
+	RCC->APB2ENR |= RCC_APB2ENR_SPI1EN;
+
+	// basically lifted right from the Interfacing slides
+	SPI_InitTypeDef SPI_InitStructInfo;
+	SPI_InitTypeDef* pInit = &SPI_InitStructInfo;
+
+	pInit->SPI_Direction = SPI_Direction_1Line_Tx;
+	pInit->SPI_Mode = SPI_Mode_Master;
+	pInit->SPI_DataSize = SPI_DataSize_8b;
+	pInit->SPI_CPOL = SPI_CPOL_Low;
+	pInit->SPI_CPHA = SPI_CPHA_1Edge;
+	pInit->SPI_NSS = SPI_NSS_Soft;
+
+	// baud rate prescaler 256 because we want as slow as possible
+	// avoids the delay on the LCD as much as possible
+	pInit->SPI_BaudRatePrescaler = SPI_BaudRatePrescaler_256;
+
+	pInit->SPI_FirstBit = SPI_FirstBit_MSB;
+	pInit->SPI_CRCPolynomial = 7;
+
+	SPI_Init(SPI1, pInit);
+	SPI_Cmd(SPI1, ENABLE);
 }
 
 // ----------------------------------------------------------------------------
@@ -425,6 +576,36 @@ void writeDAC(uint32_t dac_val)
 	DAC->DHR12R1 = dac_val;
 }
 
+// need a delay because we can't read from the LCD to know when its ready
+void delayMs(uint16_t ms)
+{
+	// clear counter and set new period
+	// to out desired number of milliseconds
+	TIM16->CNT = 0x0;
+	TIM16->ARR = ms;
+
+	// Update timer registers
+	TIM16->EGR = ((uint16_t)0x0001);
+
+	// Enable update interrupt generation
+	TIM16->DIER |= TIM_DIER_UIE;
+
+	//Start counting
+	TIM16->CR1 |= TIM_CR1_CEN;
+
+	// wait until its done
+	// by checking it the flag is up
+	while ( (TIM16->SR & TIM_SR_UIF) == 0 );
+
+	// Stop timer
+	TIM16->CR1 &= ~(TIM_CR1_CEN);
+
+	// Clear flag
+	TIM16->SR &= ~(TIM_SR_UIF);
+
+
+}
+
 // ----------------------------------------------------------------------------
 //                                  INTERRUPTS
 // ----------------------------------------------------------------------------
@@ -441,6 +622,26 @@ void TIM2_IRQHandler()
 
 		/* Restart stopped timer */
 		TIM2->CR1 |= TIM_CR1_CEN;
+	}
+}
+
+// Update the LCD
+void TIM3_IRQHandler()
+{
+	/* Check if update interrupt flag is indeed set */
+	if ((TIM3->SR & TIM_SR_UIF) != 0)
+	{
+		// Update the LCD here
+		if (TIM3_DEBUG)
+		{
+			trace_printf("TIM3 IRQ Handler!\n");
+		}
+
+		/* Clear update interrupt flag */
+		TIM3->SR &= ~(TIM_SR_UIF);
+
+		/* Restart stopped timer */
+		TIM3->CR1 |= TIM_CR1_CEN;
 	}
 }
 
