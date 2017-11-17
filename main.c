@@ -54,12 +54,32 @@
 // define PB4 as LCK for LCD
 #define LCK_PIN ((uint16_t)0x0010)
 
+//LCD defines
+#define LCD_CMD  ((uint8_t)(0x00))
+#define LCD_CHAR ((uint8_t)(0x40))
+#define LCD_EN ((uint8_t)(0x80))
+
+#define LCD_CMD_CLEAR ((uint8_t)0x01)
+
+#define LCD_ROW_F ((uint8_t)0x80)
+#define LCD_ROW_R ((uint8_t)0xC0)
+
+#define D0 ((uint8_t)0x00)
+#define D1 ((uint8_t)0x01)
+#define D2 ((uint8_t)0x02)
+#define D3 ((uint8_t)0x03)
+#define D4 ((uint8_t)0x04)
+#define D5 ((uint8_t)0x05)
+#define D6 ((uint8_t)0x06)
+#define D7 ((uint8_t)0x07)
+
 //#define R1
 
 #define MAIN_DEBUG 0
 #define EXTI_DEBUG 0
 #define TIM3_DEBUG 0
-#define TIM16_DEBUG 1
+#define TIM16_DEBUG 0
+#define SPI_DEBUG 0
 
 
 // ----------------------------------------------------------------------------
@@ -74,6 +94,7 @@
 typedef struct ADC_Typedef ADC_Typedef; // forward declaration
 typedef struct DAC_Typedef DAC_Typedef; // forward declaration
 typedef struct PWM_Typedef PWM_Typedef; // forward declaration
+typedef struct LCD_Typedef LCD_Typedef; // forward declaration
 
 
 
@@ -164,9 +185,14 @@ void PWM_struct_init(volatile PWM_Typedef* self);
 typedef struct LCD_Typedef
 {
 	// --------- Variable Members ----------
-
 	// --------- Function Members ----------
+
+	// writes frequency and resistance to LCD
+	void (*write)(volatile LCD_Typedef*, uint32_t, uint32_t);
 } LCD_Typedef;
+
+void LCD_write_impl(volatile LCD_Typedef* self, uint32_t freq, uint32_t ohms);
+void LCD_struct_init(volatile LCD_Typedef* self);
 
 
 // ----------------------------------------------------------------------------
@@ -190,6 +216,13 @@ uint32_t toOhms(uint32_t adc_val);
 DAC_Data_Typedef toDacVal(uint32_t adc_val);
 void writeDAC(uint32_t dac_val);
 void delayMs(uint16_t ms);
+void SPI_SendByte(uint8_t data);
+void SPI_lock(void);
+void SPI_unlock(void);
+void LCD_SendByte(uint8_t msg_type, uint8_t msg);
+void LCD_Clear(void);
+void LCD_ToDigit(uint8_t row, uint8_t digit);
+void LCD_WriteChar(char c);
 
 // ----------------------------------------------------------------------------
 //                                 GLOBALS
@@ -198,6 +231,7 @@ void delayMs(uint16_t ms);
 volatile ADC_Typedef pot;
 volatile DAC_Typedef opto;
 volatile PWM_Typedef pwm;
+volatile LCD_Typedef lcd;
 
 // ----------------------------------------------------------------------------
 //                                   MAIN
@@ -210,29 +244,21 @@ int main(int argc, char* argv[])
 	trace_printf("System clock: %u Hz\n\n", SystemCoreClock);
 
 	myGPIOA_Init(); // init port A
-	myGPIOB_Init(); // init port B
 
 	// Initialize potentiometer resource (ADC)
-	ADC_struct_init(&pot );
+	ADC_struct_init( &pot );
 	// Initialize optocoupler resource (DAC)
-	DAC_struct_init(&opto);
+	DAC_struct_init( &opto);
 	// Initialize PWM signal resource (EXTI, TIM2)
-	PWM_struct_init(&pwm );
+	PWM_struct_init( &pwm );
 
-	mySPI_Init();
-	myTIM3_Init();
-	myTIM16_Init();
+	LCD_struct_init( &lcd );
+
+
 
 
 	while (1)
 	{
-		/* --------- Test section --------- */
-		///*
-		trace_printf("Starting delay for 3 seconds\n");
-		delayMs(3000);
-		trace_printf("Finished delay!\n");
-		//*/
-		/* -------------------------------- */
 
 		/*
 		pot.read(&pot);
@@ -302,7 +328,7 @@ void myGPIOB_Init(void)
 	// Configure PB3 as alternate function 0 (SPI1_SCK)
 
 	// Configure AF0
-	GPIOB->MODER |= (GPIO_MODER_MODER3_0);
+	GPIOB->MODER |= (GPIO_MODER_MODER3_1);
 	// Configure push-pull mode
 	GPIOB->OTYPER &= ~(GPIO_OTYPER_OT_3);
 	// Configure high speed mode
@@ -313,7 +339,7 @@ void myGPIOB_Init(void)
 	// Configure PB5 as alternate function 0 (SPI1_MOSI)
 
 	// Configure AF0
-	GPIOB->MODER |= (GPIO_MODER_MODER5_0);
+	GPIOB->MODER |= (GPIO_MODER_MODER5_1);
 	// Configure push-pull mode
 	GPIOB->OTYPER &= ~(GPIO_OTYPER_OT_5);
 	// Configure high speed mode
@@ -473,23 +499,22 @@ void mySPI_Init(void)
 
 	// basically lifted right from the Interfacing slides
 	SPI_InitTypeDef SPI_InitStructInfo;
-	SPI_InitTypeDef* pInit = &SPI_InitStructInfo;
 
-	pInit->SPI_Direction = SPI_Direction_1Line_Tx;
-	pInit->SPI_Mode = SPI_Mode_Master;
-	pInit->SPI_DataSize = SPI_DataSize_8b;
-	pInit->SPI_CPOL = SPI_CPOL_Low;
-	pInit->SPI_CPHA = SPI_CPHA_1Edge;
-	pInit->SPI_NSS = SPI_NSS_Soft;
+	SPI_InitStructInfo.SPI_Direction = SPI_Direction_1Line_Tx;
+	SPI_InitStructInfo.SPI_Mode = SPI_Mode_Master;
+	SPI_InitStructInfo.SPI_DataSize = SPI_DataSize_8b;
+	SPI_InitStructInfo.SPI_CPOL = SPI_CPOL_Low;
+	SPI_InitStructInfo.SPI_CPHA = SPI_CPHA_1Edge;
+	SPI_InitStructInfo.SPI_NSS = SPI_NSS_Soft;
 
 	// baud rate prescaler 256 because we want as slow as possible
 	// avoids the delay on the LCD as much as possible
-	pInit->SPI_BaudRatePrescaler = SPI_BaudRatePrescaler_256;
+	SPI_InitStructInfo.SPI_BaudRatePrescaler = SPI_BaudRatePrescaler_256;
 
-	pInit->SPI_FirstBit = SPI_FirstBit_MSB;
-	pInit->SPI_CRCPolynomial = 7;
+	SPI_InitStructInfo.SPI_FirstBit = SPI_FirstBit_MSB;
+	SPI_InitStructInfo.SPI_CRCPolynomial = 7;
 
-	SPI_Init(SPI1, pInit);
+	SPI_Init(SPI1, &SPI_InitStructInfo);
 	SPI_Cmd(SPI1, ENABLE);
 }
 
@@ -535,6 +560,82 @@ void PWM_struct_init(volatile PWM_Typedef* self)
 
 	myTIM2_Init();	// init timer and interrupts
 	myEXTI_Init();	// init exti interrupts for PA1
+}
+
+void LCD_write_impl(volatile LCD_Typedef* self, uint32_t freq, uint32_t ohms)
+{
+	//pass
+}
+
+void LCD_struct_init(volatile LCD_Typedef* self)
+{
+	myGPIOB_Init(); // init port B
+	mySPI_Init();
+	myTIM16_Init(); // TIM16 is delay
+
+	// associate write method to struct
+	self->write = &LCD_write_impl;
+
+	// initialize LCD
+	// According to page 46 of Hitachi LCD datasheet
+	// Must send  high-half word first three times (times 3 each as per usual):
+	//     - RS = 0, RW = 0, 0011
+	// Then send RS = 0, RW = 0, 0010 (x3 as usual) only high-half
+	// Then send the remaining init instructions (use LCD send command)
+	//     00 0010 1000
+	//     00 0010 1000
+	//     00 0010 1000
+	//     00 0010 1000
+
+	SPI_SendByte( LCD_CMD | ((uint8_t)0b00000011));
+	SPI_SendByte( LCD_CMD | LCD_EN | ((uint8_t)0b00000011));
+	SPI_SendByte( LCD_CMD | ((uint8_t)0b00000011));
+
+	delayMs(5);
+
+	SPI_SendByte( LCD_CMD | ((uint8_t)0b00000011));
+	SPI_SendByte( LCD_CMD | LCD_EN | ((uint8_t)0b00000011));
+	SPI_SendByte( LCD_CMD | ((uint8_t)0b00000011));
+
+	delayMs(1);
+
+	SPI_SendByte( LCD_CMD | ((uint8_t)0b00000011));
+	SPI_SendByte( LCD_CMD | LCD_EN | ((uint8_t)0b00000011));
+	SPI_SendByte( LCD_CMD | ((uint8_t)0b00000011));
+
+	delayMs(1);
+
+	SPI_SendByte( LCD_CMD | ((uint8_t)0b00000010));
+	SPI_SendByte( LCD_CMD | LCD_EN | ((uint8_t)0b00000010));
+	SPI_SendByte( LCD_CMD | ((uint8_t)0b00000010));
+
+	delayMs(3);
+
+	LCD_SendByte(LCD_CMD, (uint8_t)0b00101000);
+	LCD_SendByte(LCD_CMD, (uint8_t)0b00001100);
+	LCD_SendByte(LCD_CMD, (uint8_t)0b00000110);
+	LCD_SendByte(LCD_CMD, (uint8_t)0b00000001);
+
+	// now ready to write actual data
+
+	// write "F:    Hz" to first row
+	LCD_ToDigit(LCD_ROW_F, D0);
+	LCD_WriteChar('F');
+	LCD_WriteChar(':');
+	LCD_ToDigit(LCD_ROW_F, D6);
+	LCD_WriteChar('H');
+	LCD_WriteChar('z');
+
+	// write "R:    Oh" to first row
+	LCD_ToDigit(LCD_ROW_R, D0);
+	LCD_WriteChar('R');
+	LCD_WriteChar(':');
+	LCD_ToDigit(LCD_ROW_R, D6);
+	LCD_WriteChar('O');
+	LCD_WriteChar('h');
+
+	// initialize TIM3 which controls refreshing the LCD
+	//myTIM3_Init();
 }
 
 
@@ -602,8 +703,72 @@ void delayMs(uint16_t ms)
 
 	// Clear flag
 	TIM16->SR &= ~(TIM_SR_UIF);
+}
 
+void SPI_SendByte(uint8_t data)
+{
+	SPI_lock();
 
+	// wait until SPI is ready
+	while ( (SPI1->SR & SPI_SR_BSY) != 0 && (SPI1->SR & SPI_SR_TXE) == 0 )
+	{
+		if (SPI_DEBUG) trace_printf("SPI_send: waiting for BSY or TXE to send\n");
+	}
+
+	SPI_SendData8(SPI1, data);
+
+	// wait until SPI is not busy
+	while ((SPI1->SR & SPI_SR_BSY) != 0)
+	{
+		if (SPI_DEBUG) trace_printf("SPI_send waiting for BSY to unlock\n");
+	}
+
+	SPI_unlock();
+}
+
+void SPI_lock(void)
+{
+	GPIOB->BRR = LCK_PIN;
+}
+
+void SPI_unlock(void)
+{
+	GPIOB->BSRR = LCK_PIN;
+}
+
+void LCD_SendByte(uint8_t msg_type, uint8_t msg)
+{
+	// split message into two bytes
+	uint8_t high = ((msg & 0xF0) >> 4);
+	uint8_t low  = (msg & 0x0F);
+
+	// send high portion in required sequence
+	SPI_SendByte(msg_type |          high);
+	SPI_SendByte(msg_type | LCD_EN | high);
+	SPI_SendByte(msg_type |          high);
+
+	// send low portion in required sequence
+	SPI_SendByte(msg_type |          low);
+	SPI_SendByte(msg_type | LCD_EN | low);
+	SPI_SendByte(msg_type |          low);
+
+	// wait for a bit for LCD to do its work
+	delayMs(3);
+}
+
+void LCD_Clear(void)
+{
+	LCD_SendByte(LCD_CMD, LCD_CMD_CLEAR);
+}
+
+void LCD_ToDigit(uint8_t row, uint8_t digit)
+{
+	LCD_SendByte(LCD_CMD, row | digit );
+}
+
+void LCD_WriteChar(char c)
+{
+	LCD_SendByte(LCD_CHAR, (uint8_t)c);
 }
 
 // ----------------------------------------------------------------------------
