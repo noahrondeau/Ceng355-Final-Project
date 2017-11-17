@@ -11,6 +11,7 @@
 // ----------------------------------------------------------------------------
 
 #include <stdio.h>
+#include <math.h>
 #include "diag/Trace.h"
 #include "cmsis/cmsis_device.h"
 
@@ -80,6 +81,7 @@
 #define TIM3_DEBUG 0
 #define TIM16_DEBUG 0
 #define SPI_DEBUG 0
+#define LCD_DEBUG 0
 
 
 // ----------------------------------------------------------------------------
@@ -222,7 +224,10 @@ void SPI_unlock(void);
 void LCD_SendByte(uint8_t msg_type, uint8_t msg);
 void LCD_Clear(void);
 void LCD_ToDigit(uint8_t row, uint8_t digit);
-void LCD_WriteChar(char c);
+void LCD_WriteChar(uint8_t c);
+void LCD_WriteNum(uint32_t num);
+void LCD_WriteFreq(uint32_t freq);
+void LCD_WriteOhms(uint32_t ohms);
 
 // ----------------------------------------------------------------------------
 //                                 GLOBALS
@@ -251,17 +256,14 @@ int main(int argc, char* argv[])
 	DAC_struct_init( &opto);
 	// Initialize PWM signal resource (EXTI, TIM2)
 	PWM_struct_init( &pwm );
-
+	// Initialize the LCD resource (GPIOB, TIM3, TIM16, SPI)
 	LCD_struct_init( &lcd );
-
-
-
 
 	while (1)
 	{
-
-		/*
+		// read potentiometer
 		pot.read(&pot);
+		// processed reading to optocoupler
 		opto.write(&opto, pot.data);
 
 		if (MAIN_DEBUG)
@@ -277,7 +279,7 @@ int main(int argc, char* argv[])
 			trace_printf(">>\t");
 			trace_printf("Optocoupler voltage:\t%f Ohms\n", opto.data.voltage);
 			trace_printf("\n");
-		}*/
+		}
 
 	}
 
@@ -519,7 +521,7 @@ void mySPI_Init(void)
 }
 
 // ----------------------------------------------------------------------------
-//                               OBJECT METHOD IMPLEMENTATIONS
+//                        OBJECT METHOD IMPLEMENTATIONS
 // ----------------------------------------------------------------------------
 
 void ADC_read_impl(volatile ADC_Typedef* self)
@@ -564,7 +566,8 @@ void PWM_struct_init(volatile PWM_Typedef* self)
 
 void LCD_write_impl(volatile LCD_Typedef* self, uint32_t freq, uint32_t ohms)
 {
-	//pass
+	LCD_WriteFreq(freq);
+	LCD_WriteOhms(ohms);
 }
 
 void LCD_struct_init(volatile LCD_Typedef* self)
@@ -620,22 +623,22 @@ void LCD_struct_init(volatile LCD_Typedef* self)
 
 	// write "F:    Hz" to first row
 	LCD_ToDigit(LCD_ROW_F, D0);
-	LCD_WriteChar('F');
-	LCD_WriteChar(':');
+	LCD_WriteChar((uint8_t)'F');
+	LCD_WriteChar((uint8_t)':');
 	LCD_ToDigit(LCD_ROW_F, D6);
-	LCD_WriteChar('H');
-	LCD_WriteChar('z');
+	LCD_WriteChar((uint8_t)'H');
+	LCD_WriteChar((uint8_t)'z');
 
 	// write "R:    Oh" to first row
 	LCD_ToDigit(LCD_ROW_R, D0);
-	LCD_WriteChar('R');
-	LCD_WriteChar(':');
+	LCD_WriteChar((uint8_t)'R');
+	LCD_WriteChar((uint8_t)':');
 	LCD_ToDigit(LCD_ROW_R, D6);
-	LCD_WriteChar('O');
-	LCD_WriteChar('h');
+	LCD_WriteChar((uint8_t)'O');
+	LCD_WriteChar((uint8_t)'h');
 
 	// initialize TIM3 which controls refreshing the LCD
-	//myTIM3_Init();
+	myTIM3_Init();
 }
 
 
@@ -766,10 +769,82 @@ void LCD_ToDigit(uint8_t row, uint8_t digit)
 	LCD_SendByte(LCD_CMD, row | digit );
 }
 
-void LCD_WriteChar(char c)
+void LCD_WriteChar(uint8_t c)
 {
-	LCD_SendByte(LCD_CHAR, (uint8_t)c);
+	LCD_SendByte(LCD_CHAR, c);
 }
+
+void LCD_WriteNum(uint32_t num)
+{
+	// array for holding char symbols
+	// note that in ASCII, a number ( <10 ) x is given by (0x30 + x)
+	uint8_t charArray[4];
+	// array to hold the digits of the number
+	// doesn't need to be bigger, because uint32_t only goes up to ~4 billion (10 digits)
+	uint32_t digitArray[10];
+
+	// extract the digits by working backwards from the most significant and taking modulus
+	uint32_t power;
+	uint32_t powVal = 1000000000; // 1 billion
+	uint32_t* pDigit = digitArray;
+
+	if(LCD_DEBUG) trace_printf("\n-------- Extracting Digits ---------\n");
+
+	uint32_t leading_zeros = 0;
+
+	for ( power = 9; power >= 0; power--)
+	{
+		*pDigit = (num / powVal) % 10;
+
+		if (*pDigit == 0 ) leading_zeros++;
+
+		if(LCD_DEBUG) trace_printf("\t>>\t%d\n", *pDigit);
+
+		if (power == 0) break; // protect against overrun
+
+		powVal /= 10;
+		pDigit++;
+	}
+
+	// for now: just print the last four digits
+	// because both our resistance and frequency are known to only go that high
+	unsigned int i;
+
+	if(LCD_DEBUG) trace_printf("\n-------- Processing Digits ---------\n");
+
+	for (i = 6; i < 10; i++)
+	{
+		charArray[i - 6] = (uint8_t)(0x30 + digitArray[i]);
+		if(LCD_DEBUG) trace_printf("\t>>\t%d\n", charArray[i-6]);
+	}
+
+	// TODO: figure out how to display all the numbers larger than 9999
+	// ...
+
+	//if (leading_zeros <= 6)
+
+
+	// Write to the display
+	for (i = 0; i < 4; i++)
+	{
+		LCD_WriteChar(charArray[i]);
+	}
+
+}
+
+void LCD_WriteFreq(uint32_t freq)
+{
+	LCD_ToDigit(LCD_ROW_F, D2);
+	LCD_WriteNum(freq);
+}
+
+void LCD_WriteOhms(uint32_t ohms)
+{
+	LCD_ToDigit(LCD_ROW_R, D2);
+	LCD_WriteNum(ohms);
+}
+
+
 
 // ----------------------------------------------------------------------------
 //                                  INTERRUPTS
@@ -802,6 +877,11 @@ void TIM3_IRQHandler()
 			trace_printf("TIM3 IRQ Handler!\n");
 		}
 
+		lcd.write(&lcd,
+				(uint32_t)round(pwm.data.frequency),
+				(uint32_t)pot.data.resistance);
+
+
 		/* Clear update interrupt flag */
 		TIM3->SR &= ~(TIM_SR_UIF);
 
@@ -820,12 +900,15 @@ void EXTI0_1_IRQHandler()
 	/* Check if EXTI1 interrupt pending flag is indeed set */
 	if ((EXTI->PR & EXTI_PR_PR1) != 0)
 	{
+		// if this is the first edge (start of the period)
+		// increment the pwm edge counter and exit
 		if (pwm.edge == FIRST_EDGE)
 		{
 			TIM2->CNT = 0x0;
 			TIM2->CR1 |= TIM_CR1_CEN; /* Restart stopped timer */
 			pwm.edge = SECOND_EDGE;
 		}
+		// if this is the second edge, calculate the period and frequency
 		else if (pwm.edge == SECOND_EDGE)
 		{
 			TIM2->CR1 &= ~(TIM_CR1_CEN);
@@ -836,6 +919,7 @@ void EXTI0_1_IRQHandler()
 			period = ((double)count) / ((double)SystemCoreClock);
 			freq = ((double)1.0) / period;
 
+			// store the calculated data in the pwm struct
 			pwm.data.frequency = freq;
 			pwm.data.period = period;
 
