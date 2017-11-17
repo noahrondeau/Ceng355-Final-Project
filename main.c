@@ -812,9 +812,23 @@ void LCD_WriteNum(uint32_t num)
 
 	if(LCD_DEBUG) trace_printf("\n-------- Processing Digits ---------\n");
 
+	uint8_t leading_zero_flag = 0;
+
 	for (i = 6; i < 10; i++)
 	{
 		charArray[i - 6] = (uint8_t)(0x30 + digitArray[i]);
+
+		if (charArray[i - 6] != (uint8_t)0x30 )
+			leading_zero_flag = 1;
+
+		if ( (leading_zero_flag == 0)
+				&& (i != 9)
+				&& (charArray[i - 6] == (uint8_t)0x30))
+		{
+			// if its a leading 0, make it a space
+			charArray[ i - 6] = (uint8_t)0x20;
+		}
+
 		if(LCD_DEBUG) trace_printf("\t>>\t%d\n", charArray[i-6]);
 	}
 
