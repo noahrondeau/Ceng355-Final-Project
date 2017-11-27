@@ -1,23 +1,23 @@
-// ----------------------------------------------------------------------------
+// --------------------------------------------------------------------------
 // School: University of Victoria, Canada.
 // Course: CENG 355 "Microprocessor-Based Systems".
 // See "system/include/cmsis/stm32f0xx.h" for register/bit definitions.
 // See "system/src/cmsis/vectors_stm32f0xx.c" for handler declarations.
-// ----------------------------------------------------------------------------
+// --------------------------------------------------------------------------
 
 
-// ----------------------------------------------------------------------------
+// --------------------------------------------------------------------------
 //                                 INCLUDES
-// ----------------------------------------------------------------------------
+// --------------------------------------------------------------------------
 
 #include <stdio.h>
 #include <math.h>
 #include "diag/Trace.h"
 #include "cmsis/cmsis_device.h"
 
-// ----------------------------------------------------------------------------
+// --------------------------------------------------------------------------
 //                                  PRAGMA
-// ----------------------------------------------------------------------------
+// --------------------------------------------------------------------------
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-parameter"
@@ -25,9 +25,9 @@
 #pragma GCC diagnostic ignored "-Wreturn-type"
 
 
-// ----------------------------------------------------------------------------
+// --------------------------------------------------------------------------
 //                                  DEFINE
-// ----------------------------------------------------------------------------
+// --------------------------------------------------------------------------
 
 /* Clock prescaler for TIM2 timer: no prescaling */
 #define TIM2_PRESCALER ((uint16_t)0x0000)
@@ -37,7 +37,8 @@
 // TIM3 controls LCD refresh
 // want to refresh 5 times per second
 // want to tick every millisecond
-// core clock: 48000000, so need to divide by 48000 to get 1000 ticks per second
+// core clock: 48000000
+//so need to divide by 48000 to get 1000 ticks per second
 #define TIM3_PRESCALER ((uint16_t)(48000))
 // want to update LCD every 200 ms
 #define TIM3_PERIOD ((uint16_t)(200))
@@ -49,22 +50,31 @@
 #define TIM16_PERIOD ((uint16_t)(200))
 
 #define DAC_MAX_VAL (4095)
-#define DAC_MAX_VOLTS (2.92) // voltage output when DAC_MAX_VAL is written to DAC
-#define OPTO_DROP (0.9) // forward voltage on optocoupler (from datasheet)
+// voltage output when DAC_MAX_VAL is written to DAC
+#define DAC_MAX_VOLTS (2.92)
+// forward voltage on optocoupler (from datasheet) 
+#define OPTO_DROP (0.9) 
 
 // define PB4 as LCK for LCD
 #define LCK_PIN ((uint16_t)0x0010)
 
 //LCD defines
+
+// code for LCD command
 #define LCD_CMD  ((uint8_t)(0x00))
+//code for LCD character
 #define LCD_CHAR ((uint8_t)(0x40))
+//code for pulsen the LCD EN
 #define LCD_EN ((uint8_t)(0x80))
 
+// Clear command
 #define LCD_CMD_CLEAR ((uint8_t)0x01)
 
+// LCD ROW address codes
 #define LCD_ROW_F ((uint8_t)0x80)
 #define LCD_ROW_R ((uint8_t)0xC0)
 
+// LCD Digit address codes
 #define D0 ((uint8_t)0x00)
 #define D1 ((uint8_t)0x01)
 #define D2 ((uint8_t)0x02)
@@ -74,24 +84,31 @@
 #define D6 ((uint8_t)0x06)
 #define D7 ((uint8_t)0x07)
 
-//#define R1
+
+// DEBUG flags to print
+// traces only when we want to
+// 0 is silent, 1 is verbose
 
 #define MAIN_DEBUG 0
+#define ADC_DEBUG 0
 #define EXTI_DEBUG 0
+#define TIM2_DEBUG 0
 #define TIM3_DEBUG 0
 #define TIM16_DEBUG 0
 #define SPI_DEBUG 0
 #define LCD_DEBUG 0
 
 
-// ----------------------------------------------------------------------------
+// --------------------------------------------------------------------------
 //                                TYPEDEFS
-// ----------------------------------------------------------------------------
+// --------------------------------------------------------------------------
 
 /*
- * These object-oriented structs are intended to be used as singletons to wrap
- * ADC, DAC, and SPI functionality. This will make the code cleaner
- * This pattern is used in lots of system implementations, for example the linuz kernel
+ * These object-oriented structs are intended to be used as singletons 
+ * to wrap ADC, DAC, and SPI functionality.
+ * This will make the code cleaner
+ * This pattern is used in lots of system implementations,
+ * for example the linux kernel
  */
 typedef struct ADC_Typedef ADC_Typedef; // forward declaration
 typedef struct DAC_Typedef DAC_Typedef; // forward declaration
@@ -170,7 +187,8 @@ typedef struct PWM_Typedef
 {
 	// --------- Variable Members ----------
 	PWM_Data_Typedef data; // global signal frequency and period data
-	Edge_Sequence_Typedef edge; // count of which edge has been seen on the signal waveform
+	// count of which edge has been seen on the signal waveform
+	Edge_Sequence_Typedef edge; 
 
 	// --------- Function Members ----------
 	// none
@@ -193,15 +211,15 @@ typedef struct LCD_Typedef
 	void (*write)(volatile LCD_Typedef*, uint32_t, uint32_t);
 } LCD_Typedef;
 
-void LCD_write_impl(volatile LCD_Typedef* self, uint32_t freq, uint32_t ohms);
+void LCD_write_impl(volatile LCD_Typedef* self,
+					uint32_t freq, uint32_t ohms);
 void LCD_struct_init(volatile LCD_Typedef* self);
 
 
-// ----------------------------------------------------------------------------
+// --------------------------------------------------------------------
 //                                PROTOTYPES
-// ----------------------------------------------------------------------------
+// --------------------------------------------------------------------
 
-void myGPIOA_Init(void);
 void myGPIOB_Init(void);
 
 void myTIM2_Init(void);
@@ -216,39 +234,46 @@ void mySPI_Init(void);
 uint32_t readADC(void);
 uint32_t toOhms(uint32_t adc_val);
 DAC_Data_Typedef toDacVal(uint32_t adc_val);
+
 void writeDAC(uint32_t dac_val);
 void delayMs(uint16_t ms);
+
 void SPI_SendByte(uint8_t data);
 void SPI_lock(void);
 void SPI_unlock(void);
+
 void LCD_SendByte(uint8_t msg_type, uint8_t msg);
 void LCD_Clear(void);
 void LCD_ToDigit(uint8_t row, uint8_t digit);
+
 void LCD_WriteChar(uint8_t c);
 void LCD_WriteNum(uint32_t num);
 void LCD_WriteFreq(uint32_t freq);
 void LCD_WriteOhms(uint32_t ohms);
 
-// ----------------------------------------------------------------------------
+// --------------------------------------------------------------------
 //                                 GLOBALS
-// ----------------------------------------------------------------------------
+// --------------------------------------------------------------------
 
-volatile ADC_Typedef pot;
-volatile DAC_Typedef opto;
-volatile PWM_Typedef pwm;
-volatile LCD_Typedef lcd;
+// These global variables represent the singleton resources
+volatile ADC_Typedef pot;  //potentiometer
+volatile DAC_Typedef opto; // optocoupler
+volatile PWM_Typedef pwm;  // PWM signal
+volatile LCD_Typedef lcd;  // LCD display
 
-// ----------------------------------------------------------------------------
+// --------------------------------------------------------------------
 //                                   MAIN
-// ----------------------------------------------------------------------------
+// --------------------------------------------------------------------
 
 int main(int argc, char* argv[])
 {
 
-	trace_printf("Welcome to Noah Rondeau and Philip Itok's CENG 355 Final Project\n");
-	trace_printf("System clock: %u Hz\n\n", SystemCoreClock);
-
-	myGPIOA_Init(); // init port A
+	if (MAIN_DEBUG)
+	{
+		trace_printf("Welcome to Noah Rondeau and 
+					Philip Itok's CENG 355 Final Project\n");
+		trace_printf("System clock: %u Hz\n\n", SystemCoreClock);
+	}
 
 	// Initialize potentiometer resource (ADC)
 	ADC_struct_init( &pot );
@@ -263,21 +288,25 @@ int main(int argc, char* argv[])
 	{
 		// read potentiometer
 		pot.read(&pot);
-		// processed reading to optocoupler
+		// output processed reading to optocoupler
 		opto.write(&opto, pot.data);
 
 		if (MAIN_DEBUG)
 		{
 			trace_printf("=========== NEW READING ============\n\n");
 			trace_printf(">>\t");
-			trace_printf("Potentiometer reading:\t%d\n", pot.data.reading);
+			trace_printf("Potentiometer reading:\t%d\n",
+							pot.data.reading);
 			trace_printf(">>\t");
-			trace_printf("Potentiometer resistance:\t%d Ohms\n", pot.data.resistance);
+			trace_printf("Potentiometer resistance:\t%d Ohms\n",
+							pot.data.resistance);
 			trace_printf("\n");
 			trace_printf(">>\t");
-			trace_printf("Optocoupler output:\t%d\n", opto.data.value);
+			trace_printf("Optocoupler output:\t%d\n",
+							opto.data.value);
 			trace_printf(">>\t");
-			trace_printf("Optocoupler voltage:\t%f Ohms\n", opto.data.voltage);
+			trace_printf("Optocoupler voltage:\t%f Ohms\n",
+							opto.data.voltage);
 			trace_printf("\n");
 		}
 
@@ -287,29 +316,10 @@ int main(int argc, char* argv[])
 
 }
 
-// ----------------------------------------------------------------------------
+// --------------------------------------------------------------------
 //                                INIT FUNCTIONS
-// ----------------------------------------------------------------------------
+// --------------------------------------------------------------------
 
-void myGPIOA_Init()
-{
-	// Enable clock for GPIOA peripheral
-	RCC->AHBENR |= RCC_AHBENR_GPIOAEN;
-
-	// Configure PA1 as input for 555 timer
-	GPIOA->MODER &= ~(GPIO_MODER_MODER1);
-	//no pull-up/pull-down for PA1
-	GPIOA->PUPDR &= ~(GPIO_PUPDR_PUPDR1);
-
-	// Configure PA0 as analog input
-	GPIOA->MODER |= GPIO_MODER_MODER0;
-	//no pull-up or down
-	GPIOA->PUPDR &= ~(GPIO_PUPDR_PUPDR1);
-
-	// Configure PA4 as analog output
-	GPIOA->MODER |= (GPIO_MODER_MODER4);
-	GPIOA->MODER &= ~(GPIO_PUPDR_PUPDR4);
-}
 
 void myGPIOB_Init(void)
 {
@@ -431,7 +441,8 @@ void myTIM16_Init(void)
 	/* Update timer registers */
 	TIM16->EGR = ((uint16_t)0x0001);
 
-	// no interrupt generation, because we only actually care about the flag
+	// no interrupt generation, because we only actually
+	// care about the flag, 
 	// we wouldn't actually do anything in the handler anyway.
 }
 
@@ -459,18 +470,23 @@ void myADC_Init(void)
 	// enable clock input to ADC
 	RCC->APB2ENR |= RCC_APB2ENR_ADC1EN;
 
-	// do some safety stuff found in the appendix of the reference manual
+	// do some safety stuff
+	// found in the appendix of the reference manual
 	if ((ADC1->CR & ADC_CR_ADEN) != 0)
 		ADC1->CR |= ADC_CR_ADDIS;
 	while ((ADC1->CR & ADC_CR_ADEN) != 0);
 	ADC1->CFGR1 &= ~ADC_CFGR1_DMAEN;
 
 	// start calibration
-	trace_printf("Start ADC Calibration\n");
+	if (ADC_DEBUG)
+		trace_printf("Start ADC Calibration\n");
+	
 	ADC1->CR = ADC_CR_ADCAL;
 	//wait until calibration finished
 	while (ADC1->CR == ADC_CR_ADCAL);
-	trace_printf("Finished ADC calibration\n");
+	
+	if (ADC_DEBUG)
+		trace_printf("Finished ADC calibration\n");
 
 	// continuous conversion and overun
 	ADC1->CFGR1 |= (ADC_CFGR1_CONT | ADC_CFGR1_OVRMOD);
@@ -479,10 +495,15 @@ void myADC_Init(void)
 	ADC1->CHSELR = ADC_CHSELR_CHSEL0;
 
 	// enable and wait for ready
-	trace_printf("Star ADC Enable and wait for ack\n");
+	if (ADC_DEBUG)
+		trace_printf("Star ADC Enable and wait for ack\n");
+	
 	ADC1->CR |= ADC_CR_ADEN;
+	
 	while (!(ADC1->ISR & ADC_ISR_ADRDY));
-	trace_printf("ADC Enabled\n");
+	
+	if (ADC_DEBUG)
+		trace_printf("ADC Enabled\n");
 }
 
 void myDAC_Init(void)
@@ -511,7 +532,8 @@ void mySPI_Init(void)
 
 	// baud rate prescaler 256 because we want as slow as possible
 	// avoids the delay on the LCD as much as possible
-	SPI_InitStructInfo.SPI_BaudRatePrescaler = SPI_BaudRatePrescaler_256;
+	SPI_InitStructInfo.SPI_BaudRatePrescaler
+				= SPI_BaudRatePrescaler_256;
 
 	SPI_InitStructInfo.SPI_FirstBit = SPI_FirstBit_MSB;
 	SPI_InitStructInfo.SPI_CRCPolynomial = 7;
@@ -520,56 +542,105 @@ void mySPI_Init(void)
 	SPI_Cmd(SPI1, ENABLE);
 }
 
-// ----------------------------------------------------------------------------
+// --------------------------------------------------------------------
 //                        OBJECT METHOD IMPLEMENTATIONS
-// ----------------------------------------------------------------------------
+// --------------------------------------------------------------------
 
+// implementation for ADC_Typedef.read
 void ADC_read_impl(volatile ADC_Typedef* self)
 {
+	// read ADC and save value
 	self->data.reading = readADC();
+	// convert to resistance and save value
 	self->data.resistance = toOhms(self->data.reading);
 }
 
+// constructor for ADC_Typedef
 void ADC_struct_init(volatile ADC_Typedef* self)
 {
+	// initialize default values
 	self->data.reading = 0;
 	self->data.resistance = 0;
+	// associate function pointer
 	self->read = &ADC_read_impl;
+	
+	// Enable clock for GPIOA peripheral
+	// if not already done
+	RCC->AHBENR |= RCC_AHBENR_GPIOAEN;
+	
+	// Configure PA0 as analog input
+	GPIOA->MODER |= GPIO_MODER_MODER0;
+	//no pull-up or down
+	GPIOA->PUPDR &= ~(GPIO_PUPDR_PUPDR1);
 
 	myADC_Init();	// init ADC with PA0 as analog input
 }
 
-void DAC_write_impl(volatile DAC_Typedef* self, ADC_Data_Typedef d)
+// implementation for DAC_Typedef.write
+void DAC_write_impl(volatile DAC_Typedef* self,
+					ADC_Data_Typedef d)
 {
+	// convert ADC value to a data value and voltage
+	// and save these
 	self->data = toDacVal(d.reading);
+	// write the value to the DAC
 	writeDAC(self->data.value);
 }
 
+// constructor for DAC_Typedef
 void DAC_struct_init(volatile DAC_Typedef* self)
 {
+	// set default values
 	self->data.value = 0;
 	self->data.voltage = 0.0;
+	// associate function pointer
 	self->write = &DAC_write_impl;
-
-	myDAC_Init();	// init DAC (automagically configured to PA4)
+	
+	// Enable clock for GPIOA peripheral
+	// if not already done
+	RCC->AHBENR |= RCC_AHBENR_GPIOAEN;
+	
+	// Configure PA4 as analog output
+	GPIOA->MODER |= (GPIO_MODER_MODER4);
+	GPIOA->MODER &= ~(GPIO_PUPDR_PUPDR4);
+	
+	// init DAC (automagically configured to PA4)
+	myDAC_Init();
 }
 
+// constructor for PWM_Typedef
 void PWM_struct_init(volatile PWM_Typedef* self)
 {
+	// set default values
 	self->data.period = 0.0;
 	self->data.frequency = 0.0;
 	self->edge = FIRST_EDGE;
+	
+	// Enable clock for GPIOA peripheral
+	// if not already done
+	RCC->AHBENR |= RCC_AHBENR_GPIOAEN;
+	
+	// Configure PA1 as input for 555 timer
+	GPIOA->MODER &= ~(GPIO_MODER_MODER1);
+	//no pull-up/pull-down for PA1
+	GPIOA->PUPDR &= ~(GPIO_PUPDR_PUPDR1);
 
 	myTIM2_Init();	// init timer and interrupts
 	myEXTI_Init();	// init exti interrupts for PA1
 }
 
-void LCD_write_impl(volatile LCD_Typedef* self, uint32_t freq, uint32_t ohms)
+// implementation for LCD_Typedef.write
+void LCD_write_impl(volatile LCD_Typedef* self,
+					uint32_t freq,
+					uint32_t ohms)
 {
+	// write the frequency to the LCD
 	LCD_WriteFreq(freq);
+	// Write the Resistance to the LCD
 	LCD_WriteOhms(ohms);
 }
 
+// constructor for LCD_Typedef
 void LCD_struct_init(volatile LCD_Typedef* self)
 {
 	myGPIOB_Init(); // init port B
@@ -581,10 +652,13 @@ void LCD_struct_init(volatile LCD_Typedef* self)
 
 	// initialize LCD
 	// According to page 46 of Hitachi LCD datasheet
-	// Must send  high-half word first three times (times 3 each as per usual):
+	// Must send  high-half word first three times
+	// (times 3 each as per usual):
 	//     - RS = 0, RW = 0, 0011
-	// Then send RS = 0, RW = 0, 0010 (x3 as usual) only high-half
-	// Then send the remaining init instructions (use LCD send command)
+	// Then send RS = 0, RW = 0, 0010 (x3 as usual)
+	// only high-half
+	// Then send the remaining init instructions
+	// (use LCD send command)
 	//     00 0010 1000
 	//     00 0010 1000
 	//     00 0010 1000
@@ -607,16 +681,21 @@ void LCD_struct_init(volatile LCD_Typedef* self)
 	SPI_SendByte( LCD_CMD | ((uint8_t)0b00000011));
 
 	delayMs(1);
-
+	
+	// sets into 4-bit interface mode
 	SPI_SendByte( LCD_CMD | ((uint8_t)0b00000010));
 	SPI_SendByte( LCD_CMD | LCD_EN | ((uint8_t)0b00000010));
 	SPI_SendByte( LCD_CMD | ((uint8_t)0b00000010));
 
 	delayMs(3);
-
+	
+	// Set number of display lines and font
 	LCD_SendByte(LCD_CMD, (uint8_t)0b00101000);
+	// Turn off display (but don't reset controller
 	LCD_SendByte(LCD_CMD, (uint8_t)0b00001100);
+	// Clear display
 	LCD_SendByte(LCD_CMD, (uint8_t)0b00000110);
+	// Enable entry mode
 	LCD_SendByte(LCD_CMD, (uint8_t)0b00000001);
 
 	// now ready to write actual data
@@ -644,9 +723,9 @@ void LCD_struct_init(volatile LCD_Typedef* self)
 
 
 
-// ----------------------------------------------------------------------------
+// --------------------------------------------------------------------
 //                               UTILITY FUNCTIONS
-// ----------------------------------------------------------------------------
+// --------------------------------------------------------------------
 
 uint32_t readADC(void)
 {
@@ -659,28 +738,41 @@ uint32_t readADC(void)
 	return (uint32_t)((ADC1->DR) & ADC_DR_DATA);
 }
 
+// convert ADC reading to resistance
 uint32_t toOhms(uint32_t adc_val)
 {
 	return (uint32_t)((((float)adc_val)/4096.0) * 5000.0);
 }
 
+// convert ADC reading to DAC output voltage and output value
 DAC_Data_Typedef toDacVal(uint32_t adc_val)
 {
-	DAC_Data_Typedef ret;
+	DAC_Data_Typedef ret; // return value
+	
+	// proportion of maximum output
 	float output_ratio = ((float)adc_val) / ((float)DAC_MAX_VAL);
+	
+	// map the proportion to the range 0.9V - 2.92V
 	float volt_range = DAC_MAX_VOLTS - OPTO_DROP;
 	float dac_volts_out = ( (output_ratio * volt_range ) + OPTO_DROP );
-	ret.value = (uint32_t)((dac_volts_out / DAC_MAX_VOLTS)*((float)DAC_MAX_VAL));
+	
+	// convert the voltage to a DAC value and return both
+	ret.value =
+		(uint32_t)((dac_volts_out / DAC_MAX_VOLTS)*((float)DAC_MAX_VAL));
 	ret.voltage = dac_volts_out;
+	
 	return ret;
 }
 
+// write to DAC
 void writeDAC(uint32_t dac_val)
 {
+	// use 12-bit, right aligned, system default endianness
 	DAC->DHR12R1 = dac_val;
 }
 
-// need a delay because we can't read from the LCD to know when its ready
+// delay for a number of milliseconds
+// required because of LCD latency
 void delayMs(uint16_t ms)
 {
 	// clear counter and set new period
@@ -713,9 +805,11 @@ void SPI_SendByte(uint8_t data)
 	SPI_lock();
 
 	// wait until SPI is ready
-	while ( (SPI1->SR & SPI_SR_BSY) != 0 && (SPI1->SR & SPI_SR_TXE) == 0 )
+	while ( (SPI1->SR & SPI_SR_BSY) != 0
+			&& (SPI1->SR & SPI_SR_TXE) == 0 )
 	{
-		if (SPI_DEBUG) trace_printf("SPI_send: waiting for BSY or TXE to send\n");
+		if (SPI_DEBUG)
+			trace_printf("SPI_send: waiting for BSY or TXE to send\n");
 	}
 
 	SPI_SendData8(SPI1, data);
@@ -723,24 +817,31 @@ void SPI_SendByte(uint8_t data)
 	// wait until SPI is not busy
 	while ((SPI1->SR & SPI_SR_BSY) != 0)
 	{
-		if (SPI_DEBUG) trace_printf("SPI_send waiting for BSY to unlock\n");
+		if (SPI_DEBUG)
+			trace_printf("SPI_send waiting for BSY to unlock\n");
 	}
 
 	SPI_unlock();
 }
 
+// assert the LCK pin (PB4) low
 void SPI_lock(void)
 {
 	GPIOB->BRR = LCK_PIN;
 }
 
+// deassert (set high) the LCK pin (PB4)
 void SPI_unlock(void)
 {
 	GPIOB->BSRR = LCK_PIN;
 }
 
+// send one byte of data to the LCD
 void LCD_SendByte(uint8_t msg_type, uint8_t msg)
 {
+	// type: either LCD_CMD or LCD_CHAR
+	// msg: the byte to send
+	
 	// split message into two bytes
 	uint8_t high = ((msg & 0xF0) >> 4);
 	uint8_t low  = (msg & 0x0F);
@@ -764,56 +865,80 @@ void LCD_Clear(void)
 	LCD_SendByte(LCD_CMD, LCD_CMD_CLEAR);
 }
 
+// move the cursor to spefic location
 void LCD_ToDigit(uint8_t row, uint8_t digit)
 {
 	LCD_SendByte(LCD_CMD, row | digit );
 }
 
+// write a character to the display
 void LCD_WriteChar(uint8_t c)
 {
 	LCD_SendByte(LCD_CHAR, c);
 }
 
+// write an integer to the screen
 void LCD_WriteNum(uint32_t num)
 {
 	// array for holding char symbols
-	// note that in ASCII, a number ( <10 ) x is given by (0x30 + x)
+	// note that in ASCII,
+	// a number ( <10 ) x is given by (0x30 + x)
 	uint8_t charArray[4];
 	// array to hold the digits of the number
-	// doesn't need to be bigger, because uint32_t only goes up to ~4 billion (10 digits)
+	// doesn't need to be bigger,
+	// because uint32_t only goes up to ~4 billion (10 digits)
 	uint32_t digitArray[10];
 
-	// extract the digits by working backwards from the most significant and taking modulus
+	// extract the digits by working backwards
+	// through the powers of ten
+	// and dividing the number by the power of ten
 	uint32_t power;
 	uint32_t powVal = 1000000000; // 1 billion
 	uint32_t* pDigit = digitArray;
 
-	if(LCD_DEBUG) trace_printf("\n-------- Extracting Digits ---------\n");
-
+	if(LCD_DEBUG)
+		trace_printf("\n-------- Extracting Digits ---------\n");
+	
 	uint32_t leading_zeros = 0;
 
+	// start at 1 billion (10^9)
+	// because that is the biggest power of ten that fits
+	// in a uint32_t
 	for ( power = 9; power >= 0; power--)
 	{
+		// we move backwards through powers,
+		// but start storing at the start of the array
+		
+		// take the modulus to get only the
+		// last digit of the result
 		*pDigit = (num / powVal) % 10;
-
+	
+		// track leading zeros
 		if (*pDigit == 0 ) leading_zeros++;
 
-		if(LCD_DEBUG) trace_printf("\t>>\t%d\n", *pDigit);
+		if(LCD_DEBUG)
+			trace_printf("\t>>\t%d\n", *pDigit);
 
 		if (power == 0) break; // protect against overrun
-
+		
+		// divide divisor by ten
 		powVal /= 10;
+		// increment storing location
 		pDigit++;
 	}
 
 	// for now: just print the last four digits
-	// because both our resistance and frequency are known to only go that high
+	// because both our resistance and frequency
+	// are known to only go that high
 	unsigned int i;
 
-	if(LCD_DEBUG) trace_printf("\n-------- Processing Digits ---------\n");
+	if(LCD_DEBUG)
+		trace_printf("\n-------- Processing Digits ---------\n");
 
 	uint8_t leading_zero_flag = 0;
 
+	// store the last four digits in the character array
+	// replace leading zeros with a space
 	for (i = 6; i < 10; i++)
 	{
 		charArray[i - 6] = (uint8_t)(0x30 + digitArray[i]);
@@ -829,13 +954,13 @@ void LCD_WriteNum(uint32_t num)
 			charArray[ i - 6] = (uint8_t)0x20;
 		}
 
-		if(LCD_DEBUG) trace_printf("\t>>\t%d\n", charArray[i-6]);
+		if(LCD_DEBUG)
+			trace_printf("\t>>\t%d\n", charArray[i-6]);
 	}
 
-	// TODO: figure out how to display all the numbers larger than 9999
+	// TODO: figure out how to display
+	// all the numbers larger than 9999
 	// ...
-
-	//if (leading_zeros <= 6)
 
 
 	// Write to the display
@@ -846,30 +971,37 @@ void LCD_WriteNum(uint32_t num)
 
 }
 
+// write the frequency to the LCD
 void LCD_WriteFreq(uint32_t freq)
 {
+	// move to the position just after "F:"
 	LCD_ToDigit(LCD_ROW_F, D2);
+	// write the frequency
 	LCD_WriteNum(freq);
 }
 
+// write the resistance to the LCD
 void LCD_WriteOhms(uint32_t ohms)
 {
+	// move to the position just after "R:"
 	LCD_ToDigit(LCD_ROW_R, D2);
+	// Write the resistance
 	LCD_WriteNum(ohms);
 }
 
 
 
-// ----------------------------------------------------------------------------
+// --------------------------------------------------------------------
 //                                  INTERRUPTS
-// ----------------------------------------------------------------------------
+// --------------------------------------------------------------------
 
 void TIM2_IRQHandler()
 {
 	/* Check if update interrupt flag is indeed set */
 	if ((TIM2->SR & TIM_SR_UIF) != 0)
 	{
-		trace_printf("\n*** Overflow! ***\n");
+		if (TIM2_DEBUG)
+			trace_printf("\n*** Overflow! ***\n");
 
 		/* Clear update interrupt flag */
 		TIM2->SR &= ~(TIM_SR_UIF);
@@ -890,7 +1022,9 @@ void TIM3_IRQHandler()
 		{
 			trace_printf("TIM3 IRQ Handler!\n");
 		}
-
+		
+		// write the current frequency and resistances
+		// to the LCD
 		lcd.write(&lcd,
 				(uint32_t)round(pwm.data.frequency),
 				(uint32_t)pot.data.resistance);
@@ -904,7 +1038,7 @@ void TIM3_IRQHandler()
 	}
 }
 
-
+// Calculate the frequency of the PWM signal
 void EXTI0_1_IRQHandler()
 {
 	double period = 0.0;
@@ -922,7 +1056,8 @@ void EXTI0_1_IRQHandler()
 			TIM2->CR1 |= TIM_CR1_CEN; /* Restart stopped timer */
 			pwm.edge = SECOND_EDGE;
 		}
-		// if this is the second edge, calculate the period and frequency
+		// if this is the second edge,
+		// calculate the period and frequency
 		else if (pwm.edge == SECOND_EDGE)
 		{
 			TIM2->CR1 &= ~(TIM_CR1_CEN);
@@ -957,4 +1092,4 @@ void EXTI0_1_IRQHandler()
 
 #pragma GCC diagnostic pop
 
-// ----------------------------------------------------------------------------
+// --------------------------------------------------------------------
